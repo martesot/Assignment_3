@@ -45,20 +45,20 @@ def question_3(data_dict: dict):
         initial_omega = np.var(stock_data.RET.iloc[0:2500]) / 50
         initial_theta = np.array([initial_omega, 0.02, 0.96, 5])
         nolev_results = opt.minimize(GARCH_log_likelihood, initial_theta, args=(stock_data))
-        report_optimization_results(nolev_results, stock_name)
+        report_optimization_results(nolev_results)
         nolev_dict.update({stock_name: nolev_results.x})
         
         # With leverage
         print(f"\nResults for {stock_name} with leverage")
         initial_theta = np.append(initial_theta, [0])
         lev_results = opt.minimize(GARCH_log_likelihood, initial_theta, args=(stock_data, True))
-        report_optimization_results(lev_results, stock_name)
+        report_optimization_results(lev_results)
         lev_dict.update({stock_name: lev_results.x})
         
     return nolev_dict, lev_dict
         
         
-def report_optimization_results(opt_res, stock_name: str, T: int=2500) -> None:
+def report_optimization_results(opt_res, T: int=2500) -> None:
     """Reports the optimization results for question 3."""
     standard_errors = np.sqrt(np.diag(opt_res.hess_inv) / T)
     likelihood = opt_res.fun * -T
@@ -97,7 +97,7 @@ def question_4(data_dict: dict) -> None:
 
 def question_5(data_dict: dict, nolev_dict: dict, lev_dict: dict) -> None:
     """Answers question 5: """
-    N = 1
+    N = 1000
     horizons = [1, 5, 20]
     levels = [0.01, 0.05, 0.1]
     
@@ -107,10 +107,9 @@ def question_5(data_dict: dict, nolev_dict: dict, lev_dict: dict) -> None:
         starting_x = stock_data.RET.iloc[time_to_april]
         
         starting_s2 = np.var(stock_data.RET.iloc[0:50])
-        for t in range(1, time_to_april+1):
-            starting_s2 = GARCH_s2_formula(starting_s2, stock_data.RET.iloc[t-1], nolev_dict[stock_name], use_leverage=False)
-
-        # No leverage
+        for t in range(time_to_april):
+            starting_s2 = GARCH_s2_formula(starting_s2, stock_data.RET.iloc[t], nolev_dict[stock_name], use_leverage=False)
+                  
         print(f"\nResults for {stock_name} without leverage")
         sim_returns = np.zeros((N, max(horizons)))
         for i in range(N):
@@ -122,7 +121,7 @@ def question_5(data_dict: dict, nolev_dict: dict, lev_dict: dict) -> None:
                 
         # With leverage
         starting_s2 = np.var(stock_data.RET.iloc[0:50])
-        for t in range(1, time_to_april):
+        for t in range(time_to_april):
             starting_s2 = GARCH_s2_formula(starting_s2, stock_data.RET.iloc[t-1], lev_dict[stock_name], use_leverage=True)
             
         print(f"\nResults for {stock_name} with leverage")
@@ -140,23 +139,79 @@ def simulate_compound_returns(starting_x, starting_s2, theta, use_leverage: bool
     x = np.zeros(T+1)
     s2 = np.zeros(T+1)
     compound_returns = np.zeros(T)
-    compound_return_factor = 1
+    compound_return_factor = (1 + starting_x / 100)
     x[0] = starting_x
     s2[0] = starting_s2
     
     for t in range(1, T+1):
         s2[t] = GARCH_s2_formula(s2[t-1], x[t-1], theta, use_leverage=use_leverage)
         x[t] = s2[t] * np.random.standard_t(df=theta[3])
-        print(x[t])
+
         compound_return_factor *= (1 + x[t] / 100)
         compound_returns[t-1] = 100 * (compound_return_factor - 1)
         
     return compound_returns
         
     
-def question_6(data_dict: dict) -> None:
+def question_6(data_dict: dict, nolev_dict: dict, lev_dict: dict) -> None:
     """Answers question 6: """
-    ...
+    levels = [0.01, 0.05, 0.1]
+    for stock_name, stock_data in data_dict.items():
+        if stock_name != 'KO': continue
+        print(f"\nResults for stock {stock_name}:")
+        H = len(stock_data.RET.iloc[2500:])
+        
+        s2 = np.var(stock_data.RET.iloc[0:50])
+        for t in range(2500):
+            s2 = GARCH_s2_formula(s2, stock_data.RET.iloc[t], nolev_dict[stock_name], use_leverage=False)
+        
+        print(f"\nNo leverage")
+        for level in levels:
+            y = np.zeros(H)
+            for t in range(2500, 2500+H):
+                s2 = GARCH_s2_formula(s2, stock_data.RET.iloc[t-1], nolev_dict[stock_name], use_leverage=False)
+                t_quant = sts.t.ppf(level, nolev_dict[stock_name][3])
+                if (t_quant * np.sqrt(s2)) > stock_data.RET.iloc[t]: y[t-2500] = 1
+                
+            # Newey-west errors
+            L = int(np.floor(H**0.2))
+            right_sum = 0
+            for l in range(1, L):
+                for h in range(l + 1, H):
+                    right_sum += (1 - l / (L + 1)) * y[h - 1] * y[h - l - 1]
+                    
+            nw_s2 = (1 / H) * np.sum(y**2) + (2 / H) * right_sum
+            
+            print(f"\nLevel = {level:.2f}")
+            print(f"Hit rate: {np.mean(y):.6f}")
+            print(f"SE: {np.std(y) / np.sqrt(H):.6f}")
+            print(f"Newey-West SE: {np.sqrt(nw_s2) / np.sqrt(H):.6f}")
+            
+        s2 = np.var(stock_data.RET.iloc[0:50])
+        for t in range(2500):
+            s2 = GARCH_s2_formula(s2, stock_data.RET.iloc[t], lev_dict[stock_name], use_leverage=True)
+        
+        print(f"\nLeverage")
+        for level in levels:
+            y = np.zeros(H)
+            for t in range(2500, 2500+H):
+                s2 = GARCH_s2_formula(s2, stock_data.RET.iloc[t-1], lev_dict[stock_name], use_leverage=True)
+                t_quant = sts.t.ppf(level, lev_dict[stock_name][3])
+                if (t_quant * np.sqrt(s2)) > stock_data.RET.iloc[t]: y[t-2500] = 1
+                
+            # Newey-west errors
+            L = int(np.floor(H**0.2))
+            right_sum = 0
+            for l in range(1, L):
+                for h in range(l + 1, H):
+                    right_sum += (1 - l / (L + 1)) * y[h - 1] * y[h - l - 1]
+                    
+            nw_s2 = (1 / H) * np.sum(y**2) + (2 / H) * right_sum
+            
+            print(f"\nLevel = {level:.2f}")
+            print(f"Hit rate: {np.mean(y):.6f}")
+            print(f"SE: {np.std(y) / np.sqrt(H):.6f}")
+            print(f"Newey-West SE: {np.sqrt(nw_s2) / np.sqrt(H):.6f}")
 
 
 def GARCH_log_likelihood(theta, stock_data: pd.DataFrame, use_leverage: bool=False, T: int=2500, return_mean: bool=True, return_negative: bool=False) -> float:
@@ -297,9 +352,9 @@ def main() -> None:
     print("=== Question 4 ===")
     # question_4(data_dict)
     print("=== Question 5 ===")
-    question_5(scaled_data_dict, nolev_dict, lev_dict)
+    # question_5(scaled_data_dict, nolev_dict, lev_dict)
     print("=== Question 6 ===")
-    # question_6(data_dict)
+    question_6(scaled_data_dict, nolev_dict, lev_dict)
     
 
 # Ensures that the file only runs when ran as a script instead of being imported

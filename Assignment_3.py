@@ -19,13 +19,54 @@ import scipy.optimize as opt
 import scipy.stats as sts
 import math
 
+def compute_NIC(theta, x = np.arange(-5,5.1,.1)):
+    
+    sig2_start = theta[0]
+    mu = theta[1]
+    omega = theta[2]
+    alpha = theta[3]
+    beta = theta[4]
+    delta = theta[5]
+    lam = theta[6]
+    
+    ind_f = x < 0
+    
+    sigmas = []
+        
+    for i, j in zip(x, ind_f):
+        sigma_2_t = omega + (((alpha*(i-mu)**2) + (delta*(i-mu)**2) * j) / (1 + ((i**2)/(lam*sig2_start)))) + (beta * sig2_start)
+        sigmas.append(sigma_2_t)
+            
+    return x, sigmas
 
-def question_1(data_dict: dict) -> None:
+def question_1() -> None:
     """Answers question 1: """
-    lambdas = [2, 5, 10, 50]
-    deltas = [0, 1, 0.2, 0.4]
-    
-    
+    lambdas = [2, 5, 10, 50] 
+    deltas = [0, 1, 0.2, 0.4] 
+    sig = 1
+    omega = 0
+    alpha = 0.05
+    beta = 0.9
+    fig, axs = plt.subplots(round(len(deltas)/2), 2, sharex='col', figsize=[16,12])
+    cnt_x = 0
+    cnt_y = 0
+    for i in deltas:
+        for j in lambdas:
+            x, sigma = compute_NIC([sig,0,omega,alpha,beta,i,j])
+            axs[cnt_y,cnt_x].plot(x, sigma, label = f"lambda = {j}")
+        axs[cnt_y,cnt_x].title.set_text(f"NIC for delta={i}")
+        handles, labels = axs[cnt_y,cnt_x].get_legend_handles_labels()
+        fig.legend(handles, labels, loc = (0.425,0.94), ncol=2)
+        fig.text(0.5, 0.075, 'Value of x', ha='center')
+        fig.text(0.085,0.5,'News Impact', ha='center', rotation='vertical')
+        if cnt_x < 1:
+            cnt_x += 1
+        else:
+            cnt_x = 0
+            cnt_y += 1
+            
+    plt.show()
+       
 def question_2(data_dict: dict) -> None:
     """Answers question 2: """
     for stock_name, stock_data in data_dict.items():
@@ -90,10 +131,22 @@ def question_3_test_case(data_dict: dict) -> None:
     print(f"Likelihood should be -3758. and is {likelihood:.2f}")
     
     
-def question_4(data_dict: dict) -> None:
+def question_4(data_dict, lev_par, nolev_par, sig0 = 1) -> None:
     """Answers question 4: """
-    ...
-        
+    fig, axs = plt.subplots(4, 2, squeeze=False, figsize=[16,12])
+    for i, it in enumerate(zip(lev_par.items(), nolev_par.items())):
+        v, w = it
+        tick, l = v
+        nl = w[1]
+        theta_nl = [sig0, 0, nl[0], nl[1], nl[2], 0, nl[3]]
+        theta_l = [sig0, 0, l[0], l[1], l[2], l[4], l[3]]
+        x, sig_nl = compute_NIC(theta_nl)
+        x, sig_l = compute_NIC(theta_l)
+        breakpoint()
+        axs[i,0].plot(x, sig_nl, label='No leverage')
+        axs[i,0].plot(x, sig_l, label='Leveraged')
+        axs[i,1].plot(data_dict[tick]['RET'])
+        #axs[i,:].title.set_text(f"{tick}")
 
 def question_5(data_dict: dict, nolev_dict: dict, lev_dict: dict) -> None:
     """Answers question 5: """
@@ -268,20 +321,22 @@ def main() -> None:
     data_dict = {stock: raw_data[raw_data.TICKER == stock] for stock in raw_data.TICKER.unique()}
     scaled_data_dict = data_preprocess(data_dict)
     
-    # For testing 5 and 6: TODO remove
-    nolev_dict = {
-        'KO':  np.array([0.00564837, 0.09934079, 0.91048003, 5.54233274]), 
-        'PFE': np.array([0.02897666, 0.11873272, 0.88174828, 6.17490427]), 
-        'JNJ': np.array([0.01349871, 0.15553047, 0.85263037, 5.95413620]), 
-        'MRK': np.array([0.04942468, 0.16251609, 0.83947497, 4.38238453])
-    }
-    
-    lev_dict = {
-        'KO':  np.array([0.00741560, 0.02706942, 0.92155679, 6.01830196, 0.11256638]), 
-        'PFE': np.array([0.01383148, 0.02818548, 0.91973697, 6.00233458, 0.11151245]), 
-        'JNJ': np.array([0.03327439, 0.01545059, 0.88586522, 5.01367745, 0.12399875]), 
-        'MRK': np.array([0.03522076, 0.04217402, 0.88308114, 4.38340737, 0.15444859])
-    }
+# =============================================================================
+#     # For testing 5 and 6: TODO remove
+#     nolev_dict = {
+#         'KO':  np.array([0.00564837, 0.09934079, 0.91048003, 5.54233274]), 
+#         'PFE': np.array([0.02897666, 0.11873272, 0.88174828, 6.17490427]), 
+#         'JNJ': np.array([0.01349871, 0.15553047, 0.85263037, 5.95413620]), 
+#         'MRK': np.array([0.04942468, 0.16251609, 0.83947497, 4.38238453])
+#     }
+#     
+#     lev_dict = {
+#         'KO':  np.array([0.00741560, 0.02706942, 0.92155679, 6.01830196, 0.11256638]), 
+#         'PFE': np.array([0.01383148, 0.02818548, 0.91973697, 6.00233458, 0.11151245]), 
+#         'JNJ': np.array([0.03327439, 0.01545059, 0.88586522, 5.01367745, 0.12399875]), 
+#         'MRK': np.array([0.03522076, 0.04217402, 0.88308114, 4.38340737, 0.15444859])
+#     }
+# =============================================================================
     
     # Go through the test cases
     print("=== Testing question 3 ===")
@@ -289,13 +344,13 @@ def main() -> None:
     
     # Work through the questions
     print("=== Question 1 ===")
-    # question_1(scaled_data_dict)
+    question_1()
     print("=== Question 2 ===")
     # question_2(scaled_data_dict)
     print("=== Question 3 ===")
-    # nolev_dict, lev_dict = question_3(scaled_data_dict)
+    nolev_dict, lev_dict = question_3(scaled_data_dict)
     print("=== Question 4 ===")
-    # question_4(data_dict)
+    question_4(data_dict, lev_dict, nolev_dict)
     print("=== Question 5 ===")
     question_5(scaled_data_dict, nolev_dict, lev_dict)
     print("=== Question 6 ===")
